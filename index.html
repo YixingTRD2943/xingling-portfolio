@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0b0b0d">
+<title>星璃玲 · 作品集 — 方案 B2 · 终端工作区</title>
+<style>
+:root{
+  --bg:#0b0b0d; --bg-2:#101013; --bg-3:#15151a;
+  --line:#26262c; --line-2:#35353e;
+  --fg:#d8d8de; --fg-2:#a8a8b2; --muted:#7c7c88; --dim:#4c4c56;
+  --green:#4ade80; --amber:#fbbf24; --cyan:#67e8f9; --magenta:#e879f9; --red:#f87171;
+  --mono:'JetBrains Mono','Cascadia Mono','SF Mono',Consolas,'DejaVu Sans Mono',monospace;
+  --tabbar-h:52px; --status-h:34px;
+  --wrap:1240px; --pad:22px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--mono);font-size:13.5px;line-height:1.85;overflow-x:hidden}
+a{color:inherit;text-decoration:none}
+img,svg{max-width:100%;display:block}
+button,input,textarea{font-family:var(--mono)}
+::selection{background:var(--green);color:#06120a}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:#2c2c34;border-radius:0}
+::-webkit-scrollbar-thumb:hover{background:#3c3c46}
+
+.g{color:var(--green)}.a{color:var(--amber)}.c{color:var(--cyan)}.m{color:var(--magenta)}
+.r{color:var(--red)}.mut{color:var(--muted)}.dim{color:var(--dim)}
+
+/* ══ 顶部：编辑器标签栏（取代原顶部导航） ═══════════════ */
+.tabbar{position:sticky;top:0;z-index:70;background:var(--bg-3);border-bottom:1px solid var(--line)}
+.tabbar__in{max-width:var(--wrap);margin:0 auto;height:var(--tabbar-h);display:flex;align-items:stretch;gap:0}
+.tabbar__win{display:flex;align-items:center;gap:7px;padding:0 18px 0 4px;flex:none}
+.tabbar__win i{width:10px;height:10px;border-radius:50%;display:block}
+.tabbar__win i:nth-child(1){background:#ff5f57}.tabbar__win i:nth-child(2){background:#febc2e}.tabbar__win i:nth-child(3){background:#28c840}
+.tabs{display:flex;align-items:stretch;flex:1;min-width:0;overflow-x:auto;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{position:relative;display:flex;align-items:center;gap:9px;padding:0 20px;font-size:12.5px;color:var(--muted);border-right:1px solid var(--line);white-space:nowrap;transition:color .18s,background .18s;flex:none}
+.tab::before{content:'';position:absolute;left:0;right:0;top:0;height:2px;background:transparent;transition:background .18s}
+.tab:hover{color:var(--fg-2);background:var(--bg-2)}
+.tab.is-active{color:var(--fg);background:var(--bg)}
+.tab.is-active::before{background:var(--green)}
+.tab__dot{width:6px;height:6px;border-radius:50%;background:var(--dim);flex:none;transition:background .18s}
+.tab.is-active .tab__dot{background:var(--green);box-shadow:0 0 6px var(--green)}
+.tab--cta{color:var(--amber)}
+.tab--cta .tab__dot{background:var(--amber)}
+.tabbar__meta{display:flex;align-items:center;padding:0 4px 0 18px;font-size:11.5px;color:var(--dim);flex:none;border-left:1px solid var(--line)}
+
+/* ══ 主体 ═══════════════════════════════════════════ */
+/* 底部留白含状态栏高度 + 刘海屏 inset（状态栏是 fixed，不让路就会压住最后一行） */
+.screen{max-width:var(--wrap);margin:0 auto;padding:34px 24px calc(var(--status-h) + env(safe-area-inset-bottom) + 56px)}
+.stack{display:grid;gap:34px}
+.row{display:grid;gap:34px}
+/* 左列正文、右列 key/value 窄表。右列给一个固定下限就够（它只有三行短键值），
+   剩下的全给正文——这样正文能有 ~34 个汉字/行，末行不会孤零零剩几个字。
+   .md 的 max-width 与这里的列宽配合：两者取小，所以都设成 34em。 */
+.row--2{grid-template-columns:minmax(0,1fr) minmax(220px,.62fr)}
+.row--2b{grid-template-columns:minmax(0,1.35fr) minmax(0,1fr)}
+
+/* ── 面板：标签嵌在边框上（box-drawing 观感） ────────── */
+/* 锚点定位改为 JS 显式计算落点（见 goto()）：
+   实测移动端模拟视口下 scrollIntoView({block:'start'}) 不遵守本元素的
+   scroll-margin-top，会停在半路。这里保留一个兜底值，逻辑不依赖它。 */
+/* 宽度用 100% + min-width:0，两条都不能少：
+   .stack 是单列 grid，grid 项默认 min-width:auto，会被自身内容的 min-content 顶宽
+   ——面板里有 white-space:pre 的 ls 输出（最长一行 290px），min-content 一路
+   上传成 346px，于是 .stack 的列宽在 320px 视口下仍是 345.78px，整页横向溢出。
+   width:100% 让面板等于列宽；min-width:0 才真正解除"内容撑宽"约束。 */
+.panel{position:relative;width:100%;min-width:0;border:1px solid var(--line);background:var(--bg-2);padding:calc(var(--pad) + 8px) var(--pad) var(--pad)}
+/* 并排面板等高：短的一侧边框也拉满，观感才像同一屏里的两个窗格 */
+.row--2>.panel,.row--2b>.panel{height:100%}
+.panel__tag{position:absolute;top:-9px;left:16px;background:var(--bg);padding:0 9px;font-size:11.5px;line-height:1.55;color:var(--fg-2);white-space:nowrap}
+.panel__tag b{color:var(--green);font-weight:400}
+.panel__meta{position:absolute;top:-9px;right:16px;background:var(--bg);padding:0 9px;font-size:11.5px;line-height:1.55;color:var(--dim);white-space:nowrap}
+.panel--hero{border-color:var(--line-2)}
+
+/* ── 通用终端行 ───────────────────────────────────── */
+.ln{display:flex;gap:9px;align-items:baseline}
+.ln__ps1{color:var(--green);flex:none}
+.ln__pwd{color:var(--cyan);flex:none}
+.cmd{color:var(--fg)}
+.out{padding-left:20px;color:var(--muted)}
+
+/* ── Hero ────────────────────────────────────────── */
+/* 主标题：姓名一行、短句在下一行，做成有意为之的两行节奏。
+   之前让短句内联跟在姓名后面，宽屏下 7 个字撑满 1146px 显得空旷，
+   窄屏又被挤成"名字+半句"的错位折行。改成显式换行后两端都稳定。 */
+.hero__banner{font-size:clamp(29px,4.6vw,50px);font-weight:700;line-height:1.22;letter-spacing:-.03em;color:var(--green);margin:4px 0 6px}
+.hero__banner em{display:block;font-style:normal;font-size:.5em;font-weight:400;letter-spacing:0;color:var(--fg-2);margin:.34em 0 0}
+.hero__tagline{color:var(--amber);font-size:13.5px;margin-bottom:22px;letter-spacing:.02em}
+/* 三条 motto 用序号列对齐；行宽限制到 44em，避免等宽长行读起来像一堵墙 */
+.hero__motto{color:var(--fg-2);max-width:46em;margin-bottom:26px;display:grid;gap:7px}
+/* balance 让三条 motto 的两行长度接近，末行不会只剩半句 */
+.hero__motto p{margin:0;display:grid;grid-template-columns:28px minmax(0,1fr);gap:4px;line-height:1.9;text-wrap:pretty}
+@supports (text-wrap: balance) {
+  .hero__motto p{text-wrap: balance}
+}
+.hero__motto .dim{user-select:none;color:var(--dim)}
+.hero__acts{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:26px}
+.tbtn{display:inline-flex;align-items:center;gap:8px;padding:11px 18px;border:1px solid var(--line-2);background:var(--bg);color:var(--fg-2);font-size:12.5px;min-height:46px;transition:all .18s;cursor:pointer}
+.tbtn:hover{border-color:var(--green);color:var(--green);background:rgba(74,222,128,.07)}
+.tbtn--fill{background:var(--green);color:#06120a;border-color:var(--green);font-weight:700}
+.tbtn--fill:hover{background:#5ee894;color:#06120a;border-color:#5ee894}
+.tbtn i{font-style:normal;color:var(--dim)}
+.tbtn:hover i,.tbtn--fill i{color:inherit;opacity:.6}
+
+/* 交互式命令提示符 */
+/* 固定高度而非 max-height：命令输出出现/清空时首屏面板不会跳动，
+   也让下方区块的位置保持稳定（滚动联动才不会有抖动） */
+.console{border-top:1px dashed var(--line-2);padding-top:16px;display:flex;flex-direction:column}
+.console__log{height:190px;overflow-y:auto;margin-bottom:10px;font-size:12.5px;line-height:1.9;scrollbar-width:thin}
+.console__log:empty::before{content:'# 等待输入…';color:var(--dim)}
+.console__log .cl{white-space:pre-wrap;word-break:break-word}
+.console__log .cl--out{padding-left:20px;color:var(--muted)}
+.console__log .cl--err{padding-left:20px;color:var(--red)}
+.console__log .cl--ok{padding-left:20px;color:var(--green)}
+/* 输入行：baseline 对齐让 input 塌到 26px 高（只有文字高度），手机上很容易点空。
+   给表单行一个 44px 的最小高度并把 input 自身撑满，点击热区才够。 */
+.console__form{display:flex;align-items:baseline;gap:9px;min-height:44px;position:relative}
+.console__form label{flex:none;display:flex;gap:9px;align-items:baseline;cursor:text}
+.console__form input{flex:1;min-width:0;background:transparent;border:none;outline:none;color:var(--fg);font-size:16px;line-height:1.6;caret-color:var(--green);padding:0;align-self:stretch}
+.console__form input::placeholder{color:var(--dim)}
+.console__hint{font-size:11.5px;color:var(--dim);margin-top:8px}
+
+/* ── 数据表（取代卡片） ───────────────────────────── */
+.tbl{width:100%}
+.tbl__head{display:grid;gap:16px;padding-bottom:8px;border-bottom:1px solid var(--line-2);font-size:11.5px;color:var(--dim);letter-spacing:.1em;text-transform:uppercase}
+.tbl__row{display:grid;gap:16px;padding:11px 0;border-bottom:1px dashed var(--line);align-items:baseline;transition:background .16s}
+.tbl__row:last-child{border-bottom:none}
+.tbl__row:hover{background:rgba(255,255,255,.022)}
+.tbl--kv .tbl__head,.tbl--kv .tbl__row{grid-template-columns:minmax(0,1fr) auto}
+.tbl--kv .tbl__v{color:var(--amber);font-weight:700;font-size:19px;text-align:right;letter-spacing:-.02em}
+.tbl--kv .tbl__v small{font-size:11.5px;color:var(--dim);font-weight:400}
+.tbl__k{color:var(--muted)}
+.tbl__k::before{content:'· ';color:var(--dim)}
+
+/* 正文（about）
+   行宽交给列宽决定，这里只设一个"再宽也不要超过"的上限。
+   等宽字体下 1ch 很窄（78ch 只有 ~610px），所以上限用 em 不用 ch：
+   36em ≈ 32 个汉字/行，再宽眼睛回行会找不到下一行开头。
+   text-wrap:pretty 让浏览器断行时避免末行只剩一两个词（Chrome 117+）。 */
+.md{max-width:38em}
+.md__h{color:#fff;font-weight:700;font-size:15px;margin-bottom:16px;letter-spacing:.01em}
+.md__h::before{content:'# ';color:var(--green);font-weight:400}
+/* 先 pretty（避免末行只剩一两个词），两行以内的段落再叠 balance 让两行长度相近。
+   balance 只在 ≤6 行时生效，长段落会被浏览器自动忽略，所以叠着写没有副作用。 */
+.md p{color:var(--fg-2);margin-bottom:13px;line-height:1.9;text-wrap:pretty}
+@supports (text-wrap: balance) {
+  .md p{text-wrap: balance}
+}
+.md p:last-child{margin-bottom:0}
+.md b{color:var(--amber);font-weight:400}
+
+/* 作品：ls 输出 */
+.filters{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px}
+.fbtn{padding:9px 14px;border:1px solid var(--line);background:transparent;color:var(--muted);font-size:12px;min-height:44px;cursor:pointer;transition:all .18s;white-space:nowrap}
+.fbtn:hover{color:var(--fg-2);border-color:var(--line-2)}
+.fbtn.is-active{color:var(--green);border-color:#20402d;background:rgba(74,222,128,.07)}
+/* ls 输出块自己是横向滚动容器，但"能滚动"不等于"不会撑宽父级"：
+   块级元素的 min-width:auto 仍按内容算，加上 max-width:100% 把它钉在面板宽度内，
+   pre 的长行才会老老实实在块内滚动，而不是把面板和网格列一起顶出去。 */
+.ls{border:1px solid var(--line);background:var(--bg);padding:18px 20px;overflow-x:auto;max-width:100%;min-width:0}
+/* ls 输出用 pre 保留列对齐，但行距放大到 2 让密集的单色文字透气；
+   注释行（# 开头）与文件行拉开一点距离，读起来才有分组感。 */
+.ls__l{white-space:pre;font-size:12.5px;line-height:2.05}
+.ls__l.mut{color:var(--muted)}
+.ls__note{margin-top:16px;padding-top:16px;border-top:1px dashed var(--line);color:var(--muted);line-height:1.95}
+.ls__note::before{content:'# ';color:var(--dim)}
+
+/* 技能：对齐表格 */
+.tbl--skills .tbl__head,.tbl--skills .tbl__row{grid-template-columns:minmax(0,auto) 52px minmax(0,1fr)}
+.tbl--skills .tbl__mod{color:#fff;font-weight:700;white-space:nowrap}
+.tbl--skills .tbl__mod s{text-decoration:none;color:var(--dim);margin-right:8px}
+.tbl--skills .tbl__n{color:var(--cyan);font-size:12px;border:1px solid #1b3a44;background:rgba(56,189,248,.06);padding:1px 0;text-align:center;line-height:1.5;cursor:help}
+/* min-width:0 是关键：grid 项默认 min-width:auto，会被最长的标签文字撑开，
+   导致整块内容溢出面板（实测窄屏越界 177px）。条目本身用 flex 换行来收口。 */
+.tbl--skills .tbl__items{color:var(--muted);line-height:2.1;min-width:0;display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 0}
+.tbl--skills .tbl__items i{font-style:normal;color:var(--dim);padding:0 7px}
+.tbl--skills .tbl__items em{font-style:normal;transition:color .16s;cursor:default}
+.tbl--skills .tbl__row:hover .tbl__items em{color:var(--green)}
+.tbl--skills .tbl__row:nth-child(2) .tbl__items em:hover{color:var(--cyan)}
+.tbl--skills .tbl__row:nth-child(3) .tbl__items em:hover{color:var(--magenta)}
+
+/* 联系：脚本式表单 */
+.sh{display:grid;gap:16px}
+.sh__field{display:grid;grid-template-columns:76px minmax(0,1fr);gap:14px;align-items:start}
+.sh__label{color:var(--muted);text-align:right;padding-top:10px;white-space:nowrap}
+.sh__label::after{content:' :';color:var(--dim)}
+.sh__box{position:relative;display:flex;align-items:flex-start;gap:9px;border-bottom:1px solid var(--line-2);transition:border-color .18s;padding-bottom:4px}
+.sh__box::before{content:'>';color:var(--green);padding-top:9px;flex:none}
+.sh__box:focus-within{border-bottom-color:var(--green)}
+.sh__box input,.sh__box textarea{flex:1;min-width:0;background:transparent;border:none;outline:none;color:var(--fg);font-size:16px;line-height:1.7;padding:9px 0;resize:vertical;caret-color:var(--green)}
+.sh__box textarea{min-height:96px}
+.sh__box input::placeholder,.sh__box textarea::placeholder{color:var(--dim)}
+.sh__submit{justify-self:start;margin-left:90px}
+
+/* EOF 行 */
+/* 正文里的内联链接（"cd ~" / "聊两句" / 邮箱）字号只有 12~14px，行内高度 14~16px，
+   手指按不准。用 padding 撑开触控区（垂直 12px，合计 ≥44px 高），
+   再用等量负 margin 抵消，保证行高与排版不变——这是行内链接放大热区不破坏流式的标准做法。 */
+.eof{padding:6px 0 0;color:var(--dim);font-size:12px}
+.eof b{color:var(--green);font-weight:400}
+.eof a,.md a,.tbl__v a{display:inline-block;padding:12px 4px;margin:-12px -4px;border-radius:2px}
+.eof a:active,.md a:active,.tbl__v a:active{background:rgba(74,222,128,.12)}
+.eof a:focus-visible,.md a:focus-visible,.tbl__v a:focus-visible{outline:1px solid var(--green);outline-offset:2px}
+
+/* ── 底部状态栏（tmux 风格，取代导航高亮） ───────────── */
+/* height 用 min-height 而非固定高度：刘海屏上 env(safe-area-inset-bottom) 的
+   34px 会把状态栏顶高，固定 height 会让内部内容被压扁或越界。 */
+.statusbar{position:fixed;left:0;right:0;bottom:0;z-index:70;min-height:calc(var(--status-h) + env(safe-area-inset-bottom));background:var(--bg-3);border-top:1px solid var(--line);display:flex;align-items:stretch;font-size:11.5px;padding-bottom:env(safe-area-inset-bottom)}
+.statusbar__in{max-width:var(--wrap);margin:0 auto;width:100%;display:flex;align-items:stretch;min-width:0;overflow:hidden}
+/* 状态栏条目的收缩规则：
+   .sb 是 flex 容器，光加 text-overflow:ellipsis 不会截断——省略号只对"自己承载文本"
+   的块/行内元素生效，对 flex 容器无效。所以改成：条目本身可收缩（flex-shrink:1）
+   + min-width:0，由内部文字节点承担截断；spacer 归零不参与分配。
+   实测 360px 下 5 个条目自然宽合计 371px，靠这套收缩回到 360px 内。 */
+.sb{display:flex;align-items:center;gap:7px;padding:0 14px;color:var(--muted);white-space:nowrap;border-right:1px solid var(--line);min-width:0;flex-shrink:1;overflow:hidden;text-overflow:ellipsis}
+.sb--mode{background:var(--green);color:#06120a;font-weight:700;letter-spacing:.1em}
+.sb--path{color:var(--cyan)}
+.sb--section{color:var(--fg-2)}
+.sb--section b{color:var(--amber);font-weight:400}
+.sb--spacer{flex:1 1 0;border-right:none;min-width:0;padding:0}
+/* 时钟固定宽度会顶宽页面：给一个可收缩的上限，窄屏下先让它让位 */
+.sb--clock{color:var(--dim);border-right:none;flex:0 1 auto;min-width:0;overflow:hidden}
+.sb--hint{color:var(--dim);border-right:none}
+.sb--hint kbd{color:var(--green)}
+
+/* ── 移动端 ──────────────────────────────────────── */
+@media (max-width:1000px){
+  .row--2,.row--2b{grid-template-columns:minmax(0,1fr)}
+}
+/* 吸顶栏与固定状态栏在窄屏用固定像素高，不再用 --tabbar-h / --status-h：
+   这两个变量原本是给桌面算的，配合 safe-area 的 calc 在某些环境下算不出值，
+   会让栏体塌成内容高度，锚点落点跟着漂。 */
+@media (max-width:760px){
+  :root{--pad:18px}
+  /* 底部留白要把状态栏真实高度（含刘海屏 inset）算进去，否则最后一行会被压住 */
+  .screen{padding:26px 14px calc(34px + env(safe-area-inset-bottom) + 44px)}
+  .tabbar__in{height:52px}
+  .tab{min-height:52px}
+  .stack,.row{gap:28px}
+  .tabbar__win{padding:0 12px 0 0}
+  .tabbar__meta{display:none}
+  .sb--hide{display:none}
+  .sb{padding:0 10px}
+}
+/* 极窄屏：状态栏收紧到最小可读集合（模式 + 当前文件 + 时钟）。
+   路径在 ≤520px 隐藏，模式在 ≤380px 隐藏——不隐藏的话条目总宽会超过视口，
+   而 .statusbar 是 fixed，会直接把整页顶宽（实测 320px 下溢出 52px）。 */
+@media (max-width:520px){
+  .sb--path{display:none}
+}
+@media (max-width:380px){
+  .sb--mode{display:none}
+  .sb{padding:0 8px;gap:4px}
+  .sb--clock{font-variant-numeric:tabular-nums}
+}
+@media (max-width:560px){
+  body{font-size:13px}
+  .hero__banner{font-size:clamp(28px,11vw,44px)}
+  /* 窄屏下短句独占一行，避免与姓名挤在一起折行错乱 */
+  .hero__banner em{display:block;font-size:.5em;margin:.5em 0 0}
+  .hero__motto{font-size:13px}
+  /* 序号列收窄到 17px，把省下的宽度让给正文——
+     之前 20px + 13px 字号让每行刚好卡在换行临界点上，三条 motto 的行数会各自乱跳 */
+  .hero__motto p{grid-template-columns:17px minmax(0,1fr);gap:2px;line-height:1.85}
+  .hero__acts{flex-direction:column;align-items:stretch}
+  .hero__acts .tbtn{width:100%;justify-content:center}
+  .panel{padding:calc(var(--pad) + 6px) 14px 16px}
+  .panel__tag{left:12px;font-size:11px}
+  .panel__meta{display:none}
+
+  /* 技能表在窄屏改为分组堆叠，等宽对齐表格放不下 */
+  .tbl--skills .tbl__head{display:none}
+  /* 窄屏改为「模块名 + 等级徽标」一行、条目另起一行 */
+  .tbl--skills .tbl__row{grid-template-columns:minmax(0,1fr) auto;gap:6px 8px;padding:14px 0}
+  .tbl--skills .tbl__mod{font-size:13.5px}
+  .tbl--skills .tbl__items{grid-column:1 / -1}
+  .tbl--skills .tbl__n{min-width:22px;font-size:11.5px}
+  /* 窄屏每条标签两端各 7px 内边距太占宽，8 个标签会撑成 4 行；
+     收窄到 4px 并压低行距，回到 3 行以内 */
+  .tbl--skills .tbl__items{line-height:1.9}
+  .tbl--skills .tbl__items i{padding:0 4px}
+
+  .sh__field{grid-template-columns:minmax(0,1fr);gap:4px}
+  .sh__label{text-align:left;padding-top:0;font-size:12px}
+  .sh__submit{margin-left:0;width:100%;justify-content:center}
+
+  .ls{padding:13px 12px}
+  .ls__l{font-size:11px}
+  .fbtn{flex:1 1 40%;text-align:center;justify-content:center;display:inline-flex;align-items:center}
+  .console__log{height:132px}
+}
+@media (prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+}
+</style>
+</head>
+<body>
+
+<!-- ══ 标签栏 ══════════════════════════════════════════ -->
+<header class="tabbar">
+  <div class="tabbar__in">
+    <div class="tabbar__win" aria-hidden="true"><i></i><i></i><i></i></div>
+    <nav class="tabs" id="tabs">
+      <a class="tab is-active" href="#home"><span class="tab__dot"></span>session.log</a>
+      <a class="tab" href="#stats"><span class="tab__dot"></span>about.md</a>
+      <a class="tab" href="#works"><span class="tab__dot"></span>works/</a>
+      <a class="tab" href="#skills"><span class="tab__dot"></span>skills.tbl</a>
+      <a class="tab" href="#contact"><span class="tab__dot"></span>contact.sh</a>
+      <a class="tab tab--cta" href="mailto:2943670672@qq.com"><span class="tab__dot"></span>写邮件给我</a>
+    </nav>
+    <div class="tabbar__meta">120×42 · UTF-8</div>
+  </div>
+</header>
+
+<main class="screen">
+  <div class="stack">
+
+    <!-- ── Hero：一次 shell 会话 ───────────────────── -->
+    <section class="panel panel--hero" id="home">
+      <span class="panel__tag">─┤ <b>session</b> ├─</span>
+      <span class="panel__meta">zsh · pid 2943</span>
+
+      <div class="ln"><span class="ln__pwd">~</span><span class="ln__ps1">$</span><span class="cmd">whoami</span></div>
+      <h1 class="hero__banner">星璃玲<em>，把想法写成能跑的东西</em></h1>
+
+      <div class="ln"><span class="ln__pwd">~</span><span class="ln__ps1">$</span><span class="cmd">cat ./tagline.txt</span></div>
+      <p class="hero__tagline out">独立开发者 · 中国 · 2026</p>
+
+      <div class="ln"><span class="ln__pwd">~</span><span class="ln__ps1">$</span><span class="cmd">cat ./motto.log</span></div>
+      <div class="hero__motto out">
+        <p><span class="dim">01</span> PySide6 做桌面工具，把重复的事交出去。</p>
+        <p><span class="dim">02</span> LangGraph 搭 AI 工作流，让模型落进流程。</p>
+        <p><span class="dim">03</span> 微信小程序交付，不为了用一次就装个 App。</p>
+      </div>
+
+      <div class="hero__acts">
+        <a href="#works" class="tbtn tbtn--fill"><i>$</i> open ./works</a>
+        <a href="#contact" class="tbtn"><i>$</i> ./contact.sh</a>
+      </div>
+
+      <div class="console">
+        <div class="console__log" id="consoleLog" aria-live="polite"></div>
+        <form class="console__form" id="consoleForm" autocomplete="off">
+          <label for="consoleInput">
+            <span class="ln__pwd">~</span><span class="ln__ps1">$</span>
+          </label>
+          <input id="consoleInput" type="text" placeholder="输入 help 查看可用命令" aria-label="命令输入" spellcheck="false">
+        </form>
+        <p class="console__hint">可试试 <span class="g">help</span> · <span class="g">whoami</span> · <span class="g">ls</span> · <span class="g">about</span> · <span class="g">skills</span> · <span class="g">sudo</span></p>
+      </div>
+    </section>
+
+    <!-- ── about.md + 数据表 并排 ──────────────────── -->
+    <div class="row row--2">
+      <section class="panel" id="about">
+        <span class="panel__tag">─┤ <b>01</b> about.md ├─</span>
+        <span class="panel__meta">2.1 KB · md</span>
+        <div class="md">
+          <h2 class="md__h">关于我</h2>
+          <p>我的工作方式很简单：先弄清楚这件事到底卡在哪，再写最少的代码把它解开。相比堆功能，我更在意一个工具能不能被顺手地用第二次。</p>
+          <p>主力是 <b>Python</b>。桌面端用 <b>PySide6</b>，AI 工作流用 <b>LangGraph</b>，交付形态则在微信小程序和 Web 之间挑更合适的那个——不是哪个流行用哪个。</p>
+          <p>目前正在把几个自用工具整理成可以拿出去的样子，踩过的坑也会一并写下来。若你也在做类似的事，欢迎来<a href="#contact">聊两句</a>。</p>
+        </div>
+      </section>
+
+      <section class="panel panel--sub" id="stats" aria-label="stats 数据表">
+        <span class="panel__tag">─┤ <b>--</b> stats ├─</span>
+        <span class="panel__meta">3 rows</span>
+        <div class="tbl tbl--kv">
+          <div class="tbl__head"><span>key</span><span>value</span></div>
+          <div class="tbl__row"><span class="tbl__k">experience</span><span class="tbl__v">1 <small>年</small></span></div>
+          <div class="tbl__row"><span class="tbl__k">works</span><span class="tbl__v">0 <small>整理中</small></span></div>
+          <div class="tbl__row"><span class="tbl__k">opensource</span><span class="tbl__v">0 <small>整理中</small></span></div>
+        </div>
+      </section>
+    </div>
+
+    <!-- ── works：ls 输出 ─────────────────────────── -->
+    <section class="panel" id="works">
+      <span class="panel__tag">─┤ <b>02</b> works/ ├─</span>
+      <span class="panel__meta">4 filters · 0 files</span>
+
+      <div class="filters" role="tablist">
+        <button class="fbtn is-active" data-filter="all" role="tab">[ 全部 ]</button>
+        <button class="fbtn" data-filter="app" role="tab">[ APP 应用 ]</button>
+        <button class="fbtn" data-filter="opensource" role="tab">[ 开源项目 ]</button>
+        <button class="fbtn" data-filter="miniapp" role="tab">[ 小程序 ]</button>
+      </div>
+
+      <div class="ls">
+        <div class="ls__l"><span class="dim">$</span> <span class="cmd">ls -la ./works</span></div>
+        <div class="ls__l mut">total 0</div>
+        <div class="ls__l"><span class="dim">drwxr-xr-x</span>  <span class="mut">1  星璃玲  staff</span>   <span class="dim">0B</span>  <span class="c">./</span></div>
+        <div class="ls__l"><span class="dim">drwxr-xr-x</span>  <span class="mut">1  星璃玲  staff</span>   <span class="dim">0B</span>  <span class="c">../</span></div>
+        <div class="ls__l mut"># 目录是空的——正在把几个自用工具整理成能拿出去的样子</div>
+        <div class="ls__l mut"># 整理好之后会按上方的分类逐个放进来</div>
+      </div>
+    </section>
+
+    <!-- ── skills：对齐表格 ───────────────────────── -->
+    <section class="panel" id="skills">
+      <span class="panel__tag">─┤ <b>03</b> skills.tbl ├─</span>
+      <span class="panel__meta">4 modules · 30 items</span>
+
+      <div class="tbl tbl--skills">
+        <div class="tbl__head"><span>module</span><span>level</span><span>items</span></div>
+
+        <div class="tbl__row">
+          <span class="tbl__mod"><s>├─</s>应用开发</span>
+          <span class="tbl__n" title="主力技术栈">主</span>
+          <span class="tbl__items"><em>python</em><i>·</i><em>pyside6</em><i>·</i><em>pyqt</em><i>·</i><em>langgraph</em><i>·</i><em>llm</em><i>·</i><em>agent</em><i>·</i><em>sqlite</em></span>
+        </div>
+
+        <div class="tbl__row">
+          <span class="tbl__mod"><s>├─</s>后端 &amp; 数据</span>
+          <span class="tbl__n" title="常用">熟</span>
+          <span class="tbl__items"><em>fastapi</em><i>·</i><em>flask</em><i>·</i><em>postgresql</em><i>·</i><em>redis</em><i>·</i><em>docker</em><i>·</i><em>sqlalchemy</em></span>
+        </div>
+
+        <div class="tbl__row">
+          <span class="tbl__mod"><s>├─</s>小程序开发</span>
+          <span class="tbl__n" title="常用">熟</span>
+          <span class="tbl__items"><em>微信小程序</em><i>·</i><em>wxml</em><i>·</i><em>wxss</em><i>·</i><em>云开发</em><i>·</i><em>云函数</em><i>·</i><em>微信支付</em></span>
+        </div>
+
+        <div class="tbl__row">
+          <span class="tbl__mod"><s>└─</s>工具 &amp; 工作流</span>
+          <span class="tbl__n" title="日常使用">日</span>
+          <span class="tbl__items"><em>git</em><i>·</i><em>github</em><i>·</i><em>vs code</em><i>·</i><em>linux</em><i>·</i><em>shell</em><i>·</i><em>ci/cd</em><i>·</i><em>nginx</em></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── contact.sh + whois 并排 ────────────────── -->
+    <div class="row row--2b">
+      <section class="panel" id="contact">
+        <span class="panel__tag">─┤ <b>04</b> contact.sh ├─</span>
+        <span class="panel__meta">executable · 755</span>
+
+        <div class="ln" style="margin-bottom:20px"><span class="ln__pwd">~</span><span class="ln__ps1">$</span><span class="cmd">./contact.sh --interactive</span></div>
+
+        <form class="sh" id="contactForm">
+          <div class="sh__field">
+            <label class="sh__label" for="name">怎么称呼你</label>
+            <div class="sh__box"><input id="name" type="text" placeholder="称呼即可，不必全名"></div>
+          </div>
+          <div class="sh__field">
+            <label class="sh__label" for="email">方便回复的邮箱</label>
+            <div class="sh__box"><input id="email" type="email" placeholder="name@example.com"></div>
+          </div>
+          <div class="sh__field">
+            <label class="sh__label" for="message">想聊的事</label>
+            <div class="sh__box"><textarea id="message" placeholder="项目合作、技术问题，或者只是想打个招呼——都可以。"></textarea></div>
+          </div>
+          <button class="tbtn tbtn--fill sh__submit" type="submit"><i>$</i> 发送留言</button>
+        </form>
+      </section>
+
+      <section class="panel" id="whois">
+        <span class="panel__tag">─┤ <b>--</b> whois ├─</span>
+        <span class="panel__meta">3 fields</span>
+
+        <div class="ln" style="margin-bottom:14px"><span class="ln__pwd">~</span><span class="ln__ps1">$</span><span class="cmd">whois 星璃玲</span></div>
+
+        <div class="tbl tbl--kv">
+          <div class="tbl__head"><span>field</span><span>value</span></div>
+          <div class="tbl__row"><span class="tbl__k">email</span><span class="tbl__v" style="font-size:14px"><a href="mailto:2943670672@qq.com">2943670672@qq.com</a></span></div>
+          <div class="tbl__row"><span class="tbl__k">location</span><span class="tbl__v" style="font-size:14px">中国</span></div>
+          <div class="tbl__row"><span class="tbl__k">open_to</span><span class="tbl__v" style="font-size:14px">技术交流 · 项目合作 · 远程协作</span></div>
+        </div>
+
+        <div class="ln" style="margin:20px 0 12px"><span class="ln__pwd">~</span><span class="ln__ps1">$</span><span class="cmd">ls ./social</span></div>
+        <div class="filters" style="margin-bottom:0">
+          <a class="fbtn" href="#">github ↗</a>
+          <a class="fbtn" href="#">掘金 ↗</a>
+          <a class="fbtn" href="#">微博 ↗</a>
+        </div>
+      </section>
+    </div>
+
+    <p class="eof"><span class="dim">#</span> EOF — 这一屏就到这里，<a href="#home"><b>cd ~</b></a> 回到开头 · <b>© 2026 星璃玲</b></p>
+  </div>
+</main>
+
+<!-- ══ 状态栏 ══════════════════════════════════════════ -->
+<footer class="statusbar">
+  <div class="statusbar__in">
+    <span class="sb sb--mode">NORMAL</span>
+    <span class="sb sb--path">~/星璃玲</span>
+    <span class="sb sb--section">file: <b id="sbSection">session.log</b></span>
+    <span class="sb sb--spacer"></span>
+    <span class="sb sb--hide">1 年 · 中国</span>
+    <span class="sb sb--hide sb--hint"><kbd>?</kbd> help</span>
+    <span class="sb sb--clock" id="sbClock">--:--</span>
+  </div>
+</footer>
+
+<script>
+(function(){
+  'use strict';
+
+  /* ══ 状态栏时钟 ══════════════════════════════════ */
+  var clock = document.getElementById('sbClock');
+  function tick(){
+    var d = new Date();
+    clock.textContent = String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+  }
+  tick(); setInterval(tick, 20000);
+
+  /* ══ 滚动：标签高亮 + 状态栏当前文件 ═══════════════ */
+  var SPY = [
+    { id:'home',    file:'session.log' },
+    { id:'about',   file:'about.md' },
+    { id:'works',   file:'works/' },
+    { id:'skills',  file:'skills.tbl' },
+    { id:'contact', file:'contact.sh' }
+  ];
+  // 只登记真正的顶层区块；并排面板（.panel--sub，如 stats）不参与切换，
+  // 否则它会在 about 之后抢走滚动联动，状态栏/标签都停不到 about.md 上。
+  var sections = SPY.map(function(s){
+    var el = document.getElementById(s.id);
+    return el ? { el: el, file: s.file } : null;
+  }).filter(Boolean);
+  var subPanels = Array.prototype.slice.call(document.querySelectorAll('.panel--sub[id]'));
+  var tabbar = document.querySelector('.tabbar');
+  var prefersReduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var tabs = Array.prototype.slice.call(document.querySelectorAll('.tab'));
+  var sbSection = document.getElementById('sbSection');
+  var ticking = false;
+
+  // scrollIntoView 后浏览器在下一帧才落位，需再同步一次
+  function syncSoon(){
+    sync();
+    requestAnimationFrame(sync);
+    setTimeout(sync, 260);
+  }
+
+  // 显式计算落点，不依赖 scroll-margin-top：
+  // 吸顶标签栏高 + 20px 呼吸位；同时夹在 [0, 最大可滚动] 内，避免末段回弹。
+  function anchorOffset(){ return tabbar.offsetHeight + 20; }
+
+  function goto(id){
+    var t = document.getElementById(id);
+    if (!t) return;
+    var y = window.scrollY + t.getBoundingClientRect().top - anchorOffset();
+    var max = document.documentElement.scrollHeight - window.innerHeight;
+    y = Math.max(0, Math.min(y, max));
+    window.scrollTo({ top: y, behavior: prefersReduce ? 'auto' : 'smooth' });
+    syncSoon();
+  }
+
+  function sync(){
+    var pos = window.scrollY + window.innerHeight * 0.32;
+    var cur = sections[0];
+    sections.forEach(function(s){ if (s.el.offsetTop <= pos) cur = s; });
+    // 并排的从属面板（.panel--sub）不单独充当"当前区块"：当它是光标位置上
+    // 启动最晚的那个面板时，归属到与它并排的顶层区块。
+    // 关键：只有当 sub 的 offsetTop 大于已选中区块的 offsetTop 时才接管，
+    // 否则滚到 works 之后会被残留的 stats 拉回 about.md。
+    subPanels.forEach(function(sub){
+      if (sub.offsetTop > pos || sub.offsetTop <= cur.el.offsetTop) return;
+      var owner = sections[0];
+      sections.forEach(function(s){ if (s.el.offsetTop <= sub.offsetTop) owner = s; });
+      cur = owner;
+    });
+    // 页面到底时强制选中最后一个
+    if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 4) {
+      cur = sections[sections.length - 1];
+    }
+    sbSection.textContent = cur.file;
+    // about.md 这一屏由 #about 与并排的 #stats 共同构成，
+    // 两者都算作同一个「标签页」处于活动状态。
+    var ownerIds = [cur.el.id].concat(subPanels.map(function(s){ return s.id; }));
+    tabs.forEach(function(t){
+      var href = (t.getAttribute('href') || '').slice(1);
+      t.classList.toggle('is-active', href !== '' && ownerIds.indexOf(href) !== -1);
+    });
+  }
+  window.addEventListener('scroll', function(){
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(function(){ sync(); ticking = false; });
+  }, { passive: true });
+  window.addEventListener('resize', sync);
+  sync();
+
+  /* ══ 平滑滚动（空锚点跳过） ═══════════════════════ */
+  document.querySelectorAll('a[href^="#"]').forEach(function(a){
+    a.addEventListener('click', function(e){
+      var h = this.getAttribute('href');
+      if (!h || h === '#') return;
+      if (document.querySelector(h)) { e.preventDefault(); goto(h.slice(1)); }
+    });
+  });
+
+  /* ══ 筛选标签 ════════════════════════════════════ */
+  var fbtns = Array.prototype.slice.call(document.querySelectorAll('.fbtn[data-filter]'));
+  fbtns.forEach(function(b){
+    b.addEventListener('click', function(){
+      fbtns.forEach(function(x){ x.classList.remove('is-active'); });
+      b.classList.add('is-active');
+    });
+  });
+
+  /* ══ 联系表单（演示用，不发请求） ══════════════════ */
+  document.getElementById('contactForm').addEventListener('submit', function(e){
+    e.preventDefault();
+    log('$ ./contact.sh --interactive', '');
+    log('send: 这是静态演示页，留言没有被真正发送。', 'out');
+    log('     想联系我的话，直接发邮件到 2943670672@qq.com。', 'out');
+  });
+
+  /* ══ 交互式命令提示符 ════════════════════════════ */
+  var logEl = document.getElementById('consoleLog');
+  var form = document.getElementById('consoleForm');
+  var input = document.getElementById('consoleInput');
+  var history = [], hIndex = -1;
+
+  function log(text, cls){
+    var line = document.createElement('div');
+    line.className = 'cl' + (cls ? ' cl--' + cls : '');
+    line.innerHTML = text;
+    logEl.appendChild(line);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+  function esc(s){ return s.replace(/[&<>"]/g, function(c){
+    return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c];
+  }); }
+  function jump(id){ goto(id); }
+  function cmd(name, args){
+    switch (name) {
+      case 'help':
+        log('这个页面能被当作终端用，试这些：', '');
+        log('<span class="g">about</span>    我是谁、在做什么', 'out');
+        log('<span class="g">works</span>    作品列表', 'out');
+        log('<span class="g">skills</span>   技术栈', 'out');
+        log('<span class="g">contact</span>  联系方式', 'out');
+        log('<span class="g">whoami</span>   一行身份摘要', 'out');
+        log('<span class="g">ls</span>       这个站点有哪些区块', 'out');
+        log('<span class="g">cd ~</span>     回到开头', 'out');
+        log('<span class="g">clear</span>    清空这块区域', 'out');
+        return;
+      case 'cd':
+        if (!args.length || args[0] === '~' || args[0] === '/') { jump('home'); log('→ 已回到 ~', 'ok'); }
+        else { log('cd: no such directory: ' + esc(args[0]), 'err'); }
+        return;
+      case 'about': case 'works': case 'skills': case 'contact':
+        log('→ 正在打开 ./' + name, 'ok');
+        jump(name);
+        return;
+      case 'whoami':
+        log('星璃玲 · 独立开发者 · 中国 · 目前开放技术交流与项目合作', 'out');
+        return;
+      case 'ls':
+        log('session.log  about.md  works/  skills.tbl  contact.sh', 'out');
+        return;
+      case 'pwd':
+        log('/home/星璃玲/portfolio', 'out');
+        return;
+      case 'date':
+        log(new Date().toString(), 'out');
+        return;
+      case 'clear': case 'cls':
+        logEl.innerHTML = '';
+        return;
+      case 'sudo':
+        log('星璃玲 is not in the sudoers file. This incident will be reported.', 'err');
+        return;
+      case 'exit': case 'quit':
+        log('这个终端关不掉——页面就是终端本身。', 'out');
+        return;
+      case '':
+        return;
+      default:
+        log('zsh: command not found: ' + esc(name) + '（试试 <span class="g">help</span>）', 'err');
+    }
+  }
+
+  form.addEventListener('submit', function(e){
+    e.preventDefault();
+    var raw = input.value.trim();
+    input.value = '';
+    if (!raw) return;                    // 空回车不产生任何输出
+    log('<span class="ln__pwd">~</span> <span class="g">$</span> ' + esc(raw), '');
+    history.push(raw); hIndex = history.length;
+    var parts = raw.split(/\s+/);
+    cmd(parts[0].toLowerCase(), parts.slice(1));
+  });
+
+  input.addEventListener('keydown', function(e){
+    if (e.key === 'ArrowUp') {
+      if (!history.length) return;
+      hIndex = Math.max(0, hIndex - 1);
+      input.value = history[hIndex] || '';
+      e.preventDefault();
+    } else if (e.key === 'ArrowDown') {
+      if (!history.length) return;
+      hIndex = Math.min(history.length, hIndex + 1);
+      input.value = history[hIndex] || '';
+      e.preventDefault();
+    }
+  });
+
+  // 点面板空白处聚焦命令输入
+  document.querySelector('.console').addEventListener('click', function(e){
+    if (e.target === logEl || e.target === this) input.focus();
+  });
+
+  // 全局按 "/" 或 "?" 快速跳到命令输入
+  document.addEventListener('keydown', function(e){
+    if (e.key === '/' || e.key === '?') {
+      var tag = (e.target.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea') return;
+      e.preventDefault();
+      input.focus();
+      input.scrollIntoView({ behavior:'smooth', block:'center' });
+    }
+  });
+})();
+</script>
+</body>
+</html>
